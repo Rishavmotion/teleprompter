@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Cue is a free teleprompter in your browser. Paste a script, press Start, read.">
+<meta name="theme-color" content="#000000">
+<style>
+[hidden]{display:none!important}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);background:#000}
+</style>
+<title>Cue Prompter</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+/* Layout: editor = workbench (script left, dials right); prompter = true-black stage, one amber reading line, HUD that fades. Single dark theme by choice: a teleprompter lives on a black screen. */
+:root{
+  --bg:#000;
+  --panel:#101012;
+  --panel-2:#17171b;
+  --line:#26262c;
+  --fg:#f1efe8;
+  --muted:#8e8c85;
+  --dim:#4b4a46;
+  --accent:#f0b24f;
+  --accent-ink:#1b1200;
+  --font:"Atkinson Hyperlegible","Helvetica Neue",Arial,sans-serif;
+  --gutter-l:max(16px,env(safe-area-inset-left,0px));
+  --gutter-r:max(16px,env(safe-area-inset-right,0px));
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 var(--font);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- Editor ---------- */
+#editor{height:100%;display:flex;flex-direction:column;padding-left:var(--gutter-l);padding-right:var(--gutter-r);padding-block:12px 16px;gap:12px}
+.bar{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em;font-size:18px}
+.brand .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+.stats{color:var(--muted);font-variant-numeric:tabular-nums;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:8px 14px;line-height:1.2;display:inline-flex;align-items:center;gap:8px}
+.btn:hover{background:var(--panel-2)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.btn.primary:hover{filter:brightness(1.06)}
+.work{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:12px}
+.script{min-width:0;min-height:0;display:flex}
+textarea#script{flex:1;width:100%;height:100%;min-height:0;resize:none;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:20px 22px;font-size:18px;line-height:1.6;color:var(--fg)}
+textarea#script::placeholder{color:var(--dim)}
+.settings{min-width:0;min-height:0;overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px;display:flex;flex-direction:column;gap:18px}
+.field{display:flex;flex-direction:column;gap:8px}
+.field .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.field label,.field .lbl{font-weight:700;font-size:14px}
+.field .val{color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px}
+.field .val kbd{margin-left:6px}
+kbd{font:12px/1 var(--font);color:var(--muted);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:2px 5px;background:var(--panel-2);white-space:nowrap}
+input[type=range]{width:100%;accent-color:var(--accent);margin:0}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{flex:1;background:transparent;border:0;padding:7px 8px;font-size:14px;color:var(--muted)}
+.seg button[aria-pressed=true]{background:var(--panel-2);color:var(--fg);font-weight:700}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px;cursor:pointer}
+.switch input{appearance:none;width:38px;height:22px;border-radius:11px;background:var(--line);position:relative;flex-shrink:0;margin:0;transition:background .15s}
+.switch input::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--fg);transition:transform .15s}
+.switch input:checked{background:var(--accent)}
+.switch input:checked::after{transform:translateX(16px);background:var(--accent-ink)}
+.keys{border-top:1px solid var(--line);padding-top:14px;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:13px;color:var(--muted);align-items:center}
+.keys b{color:var(--fg);font-weight:400}
+.settings h2{margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.hint{font-size:13px;color:var(--muted);margin:0}
+
+@media (max-width:820px){
+  #editor{height:auto;min-height:100%}
+  .work{grid-template-columns:minmax(0,1fr)}
+  textarea#script{height:55vh;min-height:300px}
+  .settings{overflow:visible}
+}
+
+/* ---------- Stage ---------- */
+#stage{position:fixed;inset:0;background:#000;z-index:5;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none}
+#stage.off{visibility:hidden;pointer-events:none}
+.viewport{position:absolute;inset:0;overflow:hidden}
+.viewport.mh{transform:scaleX(-1)}
+.viewport.mv{transform:scaleY(-1)}
+.viewport.mh.mv{transform:scale(-1,-1)}
+.roll{position:absolute;left:50%;top:0;transform:translate3d(-50%,0,0);will-change:transform;width:var(--col,70%);font-size:var(--size,56px);line-height:1.32;font-weight:400;text-align:var(--align,left);padding-left:var(--gutter-l);padding-right:var(--gutter-r)}
+.roll p{margin:0 0 .7em}
+.roll p:last-child{margin-bottom:0}
+.roll .cue{color:var(--dim);font-style:italic;font-weight:400}
+.roll p.cue-line{font-size:.55em;line-height:1.3;color:var(--dim)}
+.roll hr{border:0;height:0;border-top:2px dashed var(--dim);width:30%;margin:.9em auto;opacity:.6}
+.roll.done-fade .tail{color:var(--dim)}
+.guide{position:absolute;left:0;right:0;top:var(--guide,38%);height:0;pointer-events:none}
+.guide::before,.guide::after{content:"";position:absolute;top:-9px;border:9px solid transparent}
+.guide::before{left:max(6px,env(safe-area-inset-left,0px));border-left:12px solid var(--accent)}
+.guide::after{right:max(6px,env(safe-area-inset-right,0px));border-right:12px solid var(--accent)}
+.guide i{position:absolute;left:0;right:0;top:0;height:1px;background:var(--accent);opacity:.18}
+.shade{position:absolute;left:0;right:0;pointer-events:none}
+.shade.top{top:0;height:var(--guide,38%);background:linear-gradient(#000 0%,rgba(0,0,0,.55) 55%,rgba(0,0,0,0) 100%)}
+.shade.bottom{bottom:0;height:22%;background:linear-gradient(rgba(0,0,0,0),#000)}
+.countdown{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.75);font-size:min(40vw,40vh);font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;z-index:3}
+.progress{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.08)}
+.progress i{display:block;height:100%;width:0;background:var(--accent)}
+.hud{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;padding-left:var(--gutter-l);padding-right:var(--gutter-r);padding-block:12px calc(14px + env(safe-area-inset-bottom,0px));transition:opacity .25s;z-index:4}
+.hud.hide{opacity:0;pointer-events:none}
+.pill{display:flex;align-items:center;gap:2px;background:rgba(20,20,24,.86);border:1px solid var(--line);border-radius:999px;padding:4px;backdrop-filter:blur(8px)}
+.pill button{background:transparent;border:0;border-radius:999px;padding:8px 12px;color:var(--fg);font-size:14px;line-height:1;min-width:40px}
+.pill button:hover{background:var(--panel-2)}
+.pill button.play{background:var(--accent);color:var(--accent-ink);font-weight:700;padding:8px 18px}
+.pill .ro{padding:8px 6px;color:var(--muted);font-variant-numeric:tabular-nums;font-size:14px;min-width:48px;text-align:center}
+.pill button[aria-pressed=true]{color:var(--accent)}
+.hud .time{color:var(--muted);font-variant-numeric:tabular-nums;font-size:14px;padding:0 6px;white-space:nowrap}
+.hud .grp{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:8px 14px;font-size:14px;z-index:20;transition:opacity .2s}
+.toast.hide{opacity:0;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.switch input,.switch input::after,.hud,.toast{transition:none}}
+</style>
+
+</head>
+<body>
+<main id="editor">
+  <header class="bar">
+    <div class="brand"><span class="dot"></span>Cue</div>
+    <div class="stats" id="stats">Loading…</div>
+    <div class="actions">
+      <label class="btn" for="file">Load .txt<input type="file" id="file" accept=".txt,.md,.text,text/plain" hidden></label>
+      <button class="btn" id="clear" type="button">Clear</button>
+      <button class="btn primary" id="start" type="button">Start prompter</button>
+    </div>
+  </header>
+  <div class="work">
+    <section class="script">
+      <textarea id="script" spellcheck="false" placeholder="Paste your script here. Blank line = new paragraph. [Square brackets] = a note to yourself, shown dim. A line with --- = section break."></textarea>
+    </section>
+    <aside class="settings">
+      <h2>Prompter</h2>
+      <div class="field">
+        <div class="row"><label for="speed">Speed</label><span class="val"><span id="speedVal">5.0</span><kbd>↑</kbd><kbd>↓</kbd></span></div>
+        <input type="range" id="speed" min="1" max="20" step="0.5" value="5">
+      </div>
+      <div class="field">
+        <div class="row"><label for="size">Text size</label><span class="val"><span id="sizeVal">56 px</span><kbd>+</kbd><kbd>−</kbd></span></div>
+        <input type="range" id="size" min="24" max="140" step="2" value="56">
+      </div>
+      <div class="field">
+        <div class="row"><label for="width">Column width</label><span class="val"><span id="widthVal">70%</span><kbd>[</kbd><kbd>]</kbd></span></div>
+        <input type="range" id="width" min="40" max="100" step="5" value="70">
+      </div>
+      <div class="field">
+        <div class="row"><span class="lbl">Align</span></div>
+        <div class="seg" id="alignSeg">
+          <button type="button" data-align="left" aria-pressed="true">Left</button>
+          <button type="button" data-align="center" aria-pressed="false">Center</button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="row"><span class="lbl">Countdown</span></div>
+        <div class="seg" id="cdSeg">
+          <button type="button" data-cd="0" aria-pressed="false">Off</button>
+          <button type="button" data-cd="3" aria-pressed="true">3 s</button>
+          <button type="button" data-cd="5" aria-pressed="false">5 s</button>
+        </div>
+      </div>
+      <label class="switch"><span>Mirror left–right <span class="val">beam-splitter glass <kbd>M</kbd></span></span><input type="checkbox" id="mirrorH"></label>
+      <label class="switch"><span>Mirror top–bottom</span><input type="checkbox" id="mirrorV"></label>
+      <label class="switch"><span>Reading line <kbd>G</kbd></span><input type="checkbox" id="guide" checked></label>
+      <div class="keys">
+        <h2 style="grid-column:1/-1">Keys and clickers</h2>
+        <kbd>Space</kbd><b>play / pause</b>
+        <kbd>→ PgDn</kbd><b>play / pause (clicker next)</b>
+        <kbd>← PgUp</kbd><b>back 5 seconds (clicker prev)</b>
+        <kbd>Home</kbd><b>restart from the top</b>
+        <kbd>F</kbd><b>fullscreen</b>
+        <kbd>Esc</kbd><b>back to the editor</b>
+        <kbd>Drag / wheel</kbd><b>scrub, tap to play or pause</b>
+      </div>
+      <p class="hint">Your script and settings stay in this browser. Nothing is uploaded.</p>
+    </aside>
+  </div>
+</main>
+
+<section id="stage" class="off">
+  <div class="viewport" id="viewport"><div class="roll" id="roll"></div></div>
+  <div class="shade top"></div>
+  <div class="shade bottom"></div>
+  <div class="guide" id="guideEl"><i></i></div>
+  <div class="countdown" id="countdown" hidden>3</div>
+  <div class="hud" id="hud">
+    <div class="grp">
+      <div class="pill">
+        <button type="button" data-act="restart" title="Restart (Home)">⟲</button>
+        <button type="button" data-act="back" title="Back 5 s (←)">−5 s</button>
+        <button type="button" class="play" data-act="toggle" id="playBtn">Play</button>
+      </div>
+      <div class="pill">
+        <button type="button" data-act="speed-" title="Slower (↓)">−</button>
+        <span class="ro" id="hudSpeed">5.0</span>
+        <button type="button" data-act="speed+" title="Faster (↑)">+</button>
+      </div>
+      <div class="pill">
+        <button type="button" data-act="size-" title="Smaller text (−)">A−</button>
+        <button type="button" data-act="size+" title="Bigger text (+)">A+</button>
+        <button type="button" data-act="mirror" id="mirrorBtn" title="Mirror (M)" aria-pressed="false">Mirror</button>
+        <button type="button" data-act="full" title="Fullscreen (F)">⛶</button>
+        <button type="button" data-act="exit" title="Back to editor (Esc)">Edit</button>
+      </div>
+    </div>
+    <span class="time" id="hudTime"></span>
+  </div>
+  <div class="progress"><i id="progressBar"></i></div>
+</section>
+<div class="toast hide" id="toast"></div>
+
+<script>
+(function(){
+  const $ = s => document.querySelector(s);
+  const KEY = 'cue-prompter-v1';
+  const SAMPLE = `[This is an example script. Replace it with your own.]
+
+Hey, it's Rishav. Today I want to show you something I built in one evening, because every teleprompter app wanted fifty dollars for a scrolling box of text.
+
+The way this works is simple. Paste your script, hit Start, and the words roll past the amber line at whatever speed feels natural. Space pauses. The up and down arrows change the speed. A Bluetooth clicker works too.
+
+[Pause. Look at the lens.]
+
+Lines inside square brackets are notes to yourself. They stay dim so you never read them out loud by accident.
+
+---
+
+If you flip the mirror switch, the text reverses for a beam-splitter rig, so the camera can sit right behind the glass.
+
+That's it. No account, no subscription, no watermark. Just the words.`;
+
+  const S = { speed:5, size:56, width:70, align:'left', countdown:3, mirrorH:false, mirrorV:false, guide:true };
+  const el = {
+    editor:$('#editor'), stage:$('#stage'), viewport:$('#viewport'), roll:$('#roll'), guide:$('#guideEl'),
+    countdown:$('#countdown'), hud:$('#hud'), progress:$('#progressBar'), script:$('#script'), stats:$('#stats'),
+    speed:$('#speed'), size:$('#size'), width:$('#width'), mirrorH:$('#mirrorH'), mirrorV:$('#mirrorV'), guideCb:$('#guide'),
+    speedVal:$('#speedVal'), sizeVal:$('#sizeVal'), widthVal:$('#widthVal'), hudSpeed:$('#hudSpeed'), hudTime:$('#hudTime'),
+    playBtn:$('#playBtn'), mirrorBtn:$('#mirrorBtn'), toast:$('#toast')
+  };
+
+  // ---------- persistence ----------
+  function load(){
+    try{
+      const raw = localStorage.getItem(KEY);
+      if(raw){ const d = JSON.parse(raw); Object.assign(S, d.settings||{}); if(typeof d.script==='string') el.script.value = d.script; else el.script.value = SAMPLE; }
+      else el.script.value = SAMPLE;
+    }catch(e){ if(!el.script.value) el.script.value = SAMPLE; }
+  }
+  let saveT;
+  function save(){
+    clearTimeout(saveT);
+    saveT = setTimeout(()=>{ try{ localStorage.setItem(KEY, JSON.stringify({settings:S, script:el.script.value})); }catch(e){} }, 250);
+  }
+
+  // ---------- script -> roll ----------
+  function esc(s){ return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function renderScript(){
+    const text = el.script.value.replace(/\r\n?/g,'\n');
+    const blocks = text.split(/\n{2,}/).map(b=>b.trim()).filter(Boolean);
+    const html = blocks.map(b=>{
+      if(/^-{3,}$/.test(b)) return '<hr>';
+      const isCue = /^\[[^\]]*\]$/.test(b);
+      const inner = esc(b).replace(/\[([^\]]+)\]/g,'<span class="cue">[$1]</span>').replace(/\n/g,'<br>');
+      return `<p${isCue?' class="cue-line"':''}>${inner}</p>`;
+    }).join('');
+    el.roll.innerHTML = html || '<p class="cue-line">[No script yet. Press Esc and paste one.]</p>';
+    layout();
+  }
+  function wordCount(){
+    return el.script.value.replace(/\[[^\]]*\]/g,' ').split(/\s+/).filter(w=>/\w/.test(w)).length;
+  }
+
+  // ---------- geometry ----------
+  let padTop = 0, padBottom = 0;
+  function layout(){
+    const h = el.viewport.clientHeight || window.innerHeight;
+    padTop = Math.round(h*0.38);
+    padBottom = h - padTop;
+    el.roll.style.paddingTop = padTop+'px';
+    el.roll.style.paddingBottom = padBottom+'px';
+    y = Math.min(y, maxY());
+    render(); updateStats();
+  }
+  function textHeight(){ return Math.max(0, el.roll.offsetHeight - padTop - padBottom); }
+  function maxY(){ return Math.max(0, el.roll.offsetHeight - (el.viewport.clientHeight||window.innerHeight)); }
+  function pxps(){ return S.speed*8; }
+  function fmt(sec){ sec=Math.max(0,Math.round(sec)); const m=Math.floor(sec/60), s=sec%60; return m+':'+String(s).padStart(2,'0'); }
+
+  // ---------- settings -> DOM ----------
+  function applySettings(){
+    el.roll.style.setProperty('--size', S.size+'px');
+    el.roll.style.setProperty('--col', S.width+'%');
+    el.roll.style.setProperty('--align', S.align);
+    el.viewport.classList.toggle('mh', S.mirrorH);
+    el.viewport.classList.toggle('mv', S.mirrorV);
+    el.guide.hidden = !S.guide;
+    el.speed.value = S.speed; el.size.value = S.size; el.width.value = S.width;
+    el.mirrorH.checked = S.mirrorH; el.mirrorV.checked = S.mirrorV; el.guideCb.checked = S.guide;
+    el.speedVal.textContent = S.speed.toFixed(1); el.hudSpeed.textContent = S.speed.toFixed(1);
+    el.sizeVal.textContent = S.size+' px'; el.widthVal.textContent = S.width+'%';
+    el.mirrorBtn.setAttribute('aria-pressed', String(S.mirrorH||S.mirrorV));
+    document.querySelectorAll('#alignSeg button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.align===S.align)));
+    document.querySelectorAll('#cdSeg button').forEach(b=>b.setAttribute('aria-pressed', String(+b.dataset.cd===S.countdown)));
+    layout(); save();
+  }
+  function updateStats(){
+    const w = wordCount(), total = textHeight()/pxps();
+    const wpm = total>0 ? Math.round(w/(total/60)) : 0;
+    el.stats.textContent = `${w.toLocaleString()} words · ${fmt(total)} at speed ${S.speed.toFixed(1)}` + (wpm?` · about ${wpm} wpm`:'');
+  }
+
+  // ---------- playback ----------
+  let y = 0, playing = false, last = 0, raf = 0, mode = 'edit';
+  function render(){
+    el.roll.style.transform = `translate3d(-50%,${-y}px,0)`;
+    const m = maxY();
+    el.progress.style.width = (m? (y/m*100):0)+'%';
+    const left = (m-y)/pxps();
+    el.hudTime.textContent = (playing?'':'paused · ') + fmt(left) + ' left';
+  }
+  function tick(t){
+    if(!playing) return;
+    const dt = Math.min(0.1, (t-last)/1000); last = t;
+    y += pxps()*dt;
+    if(y >= maxY()){ y = maxY(); render(); pause(); return; }
+    render();
+    raf = requestAnimationFrame(tick);
+  }
+  function play(){
+    if(playing) return;
+    if(y >= maxY()) y = 0;
+    playing = true; last = performance.now();
+    el.playBtn.textContent = 'Pause';
+    raf = requestAnimationFrame(tick);
+    hudAutoHide();
+  }
+  function pause(){
+    playing = false; cancelAnimationFrame(raf);
+    el.playBtn.textContent = 'Play';
+    render(); showHud();
+  }
+  function toggle(){ playing ? pause() : play(); }
+  function seek(dy){ y = Math.max(0, Math.min(maxY(), y+dy)); render(); }
+
+  let cdTimer = 0;
+  function startWithCountdown(){
+    cancelCountdown();
+    if(!S.countdown){ play(); return; }
+    let n = S.countdown;
+    el.countdown.hidden = false; el.countdown.textContent = n;
+    cdTimer = setInterval(()=>{
+      n--;
+      if(n<=0){ cancelCountdown(); play(); }
+      else el.countdown.textContent = n;
+    }, 1000);
+  }
+  function cancelCountdown(){ clearInterval(cdTimer); cdTimer = 0; el.countdown.hidden = true; }
+
+  // ---------- modes ----------
+  let wake = null;
+  async function keepAwake(){ try{ wake = await navigator.wakeLock.request('screen'); }catch(e){ wake = null; } }
+  function releaseWake(){ try{ wake && wake.release(); }catch(e){} wake = null; }
+  document.addEventListener('visibilitychange', ()=>{ if(mode==='prompt' && document.visibilityState==='visible') keepAwake(); });
+
+  function enterPrompter(){
+    mode = 'prompt';
+    renderScript();
+    el.stage.classList.remove('off');
+    el.editor.hidden = true;
+    y = 0; render(); showHud();
+    keepAwake();
+    startWithCountdown();
+  }
+  function exitPrompter(){
+    cancelCountdown(); pause();
+    mode = 'edit';
+    el.stage.classList.add('off');
+    el.editor.hidden = false;
+    releaseWake();
+    if(document.fullscreenElement){ document.exitFullscreen().catch(()=>{}); }
+    el.script.focus();
+  }
+  function fullscreen(){
+    if(document.fullscreenElement){ document.exitFullscreen().catch(()=>{}); return; }
+    const r = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+    if(r && r.catch) r.catch(()=>toast('Fullscreen is not available here'));
+  }
+
+  // ---------- HUD ----------
+  let hudT = 0;
+  function showHud(){ el.hud.classList.remove('hide'); clearTimeout(hudT); if(playing) hudAutoHide(); }
+  function hudAutoHide(){ clearTimeout(hudT); hudT = setTimeout(()=>{ if(playing) el.hud.classList.add('hide'); }, 2500); }
+  el.stage.addEventListener('pointermove', showHud);
+  el.hud.addEventListener('click', e=>{
+    const b = e.target.closest('button'); if(!b) return;
+    act(b.dataset.act);
+  });
+  function act(a){
+    switch(a){
+      case 'toggle': cdTimer ? cancelCountdown() : toggle(); break;
+      case 'restart': y = 0; render(); break;
+      case 'back': seek(-pxps()*5); break;
+      case 'speed+': S.speed = Math.min(20, +(S.speed+0.5).toFixed(1)); applySettings(); break;
+      case 'speed-': S.speed = Math.max(1, +(S.speed-0.5).toFixed(1)); applySettings(); break;
+      case 'size+': S.size = Math.min(140, S.size+4); applySettings(); break;
+      case 'size-': S.size = Math.max(24, S.size-4); applySettings(); break;
+      case 'mirror': S.mirrorH = !S.mirrorH; applySettings(); break;
+      case 'guide': S.guide = !S.guide; applySettings(); break;
+      case 'width+': S.width = Math.min(100, S.width+5); applySettings(); break;
+      case 'width-': S.width = Math.max(40, S.width-5); applySettings(); break;
+      case 'full': fullscreen(); break;
+      case 'exit': exitPrompter(); break;
+    }
+  }
+
+  // ---------- scrub: drag, wheel, tap ----------
+  let drag = null;
+  el.viewport.addEventListener('pointerdown', e=>{
+    drag = { y:e.clientY, moved:0, wasPlaying:playing };
+    el.viewport.setPointerCapture(e.pointerId);
+  });
+  el.viewport.addEventListener('pointermove', e=>{
+    if(!drag) return;
+    const dy = e.clientY - drag.y; drag.y = e.clientY; drag.moved += Math.abs(dy);
+    if(drag.moved > 6){ if(playing) pause(); seek(S.mirrorV ? dy : -dy); }
+  });
+  function endDrag(e){
+    if(!drag) return;
+    const d = drag; drag = null;
+    if(d.moved <= 6) act('toggle');
+  }
+  el.viewport.addEventListener('pointerup', endDrag);
+  el.viewport.addEventListener('pointercancel', endDrag);
+  el.viewport.addEventListener('wheel', e=>{ e.preventDefault(); seek(e.deltaY); showHud(); }, {passive:false});
+
+  // ---------- keyboard ----------
+  document.addEventListener('keydown', e=>{
+    if(mode !== 'prompt'){
+      if(e.key==='Escape') return;
+      if((e.metaKey||e.ctrlKey) && e.key==='Enter'){ e.preventDefault(); enterPrompter(); }
+      return;
+    }
+    if(e.metaKey||e.ctrlKey||e.altKey) return;
+    const k = e.key;
+    const map = {
+      ' ':'toggle','Enter':'toggle','k':'toggle','ArrowRight':'toggle','PageDown':'toggle','b':'toggle','.':'toggle',
+      'ArrowLeft':'back','PageUp':'back','Home':'restart','r':'restart',
+      'ArrowUp':'speed+','ArrowDown':'speed-','+':'size+','=':'size+','-':'size-','_':'size-',
+      ']':'width+','[':'width-','m':'mirror','g':'guide','f':'full','Escape':'exit'
+    };
+    const a = map[k] ?? map[k.toLowerCase()];
+    if(!a) return;
+    e.preventDefault(); act(a); showHud();
+  });
+
+  // ---------- editor wiring ----------
+  el.script.addEventListener('input', ()=>{ save(); clearTimeout(el.script._t); el.script._t = setTimeout(()=>{ renderScript(); }, 200); });
+  el.speed.addEventListener('input', ()=>{ S.speed = +el.speed.value; applySettings(); });
+  el.size.addEventListener('input', ()=>{ S.size = +el.size.value; applySettings(); });
+  el.width.addEventListener('input', ()=>{ S.width = +el.width.value; applySettings(); });
+  el.mirrorH.addEventListener('change', ()=>{ S.mirrorH = el.mirrorH.checked; applySettings(); });
+  el.mirrorV.addEventListener('change', ()=>{ S.mirrorV = el.mirrorV.checked; applySettings(); });
+  el.guideCb.addEventListener('change', ()=>{ S.guide = el.guideCb.checked; applySettings(); });
+  $('#alignSeg').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b){ S.align=b.dataset.align; applySettings(); } });
+  $('#cdSeg').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b){ S.countdown=+b.dataset.cd; applySettings(); } });
+  $('#start').addEventListener('click', enterPrompter);
+  $('#clear').addEventListener('click', ()=>{ el.script.value=''; renderScript(); save(); el.script.focus(); });
+  $('#file').addEventListener('change', e=>{ const f=e.target.files[0]; if(f) readFile(f); e.target.value=''; });
+  el.script.addEventListener('dragover', e=>{ e.preventDefault(); });
+  el.script.addEventListener('drop', e=>{ const f=e.dataTransfer.files && e.dataTransfer.files[0]; if(f){ e.preventDefault(); readFile(f); } });
+  function readFile(f){
+    const r = new FileReader();
+    r.onload = ()=>{ el.script.value = String(r.result||''); renderScript(); save(); toast('Loaded '+f.name); };
+    r.onerror = ()=>toast('Could not read that file');
+    r.readAsText(f);
+  }
+
+  let toastT=0;
+  function toast(msg){ el.toast.textContent = msg; el.toast.classList.remove('hide'); clearTimeout(toastT); toastT=setTimeout(()=>el.toast.classList.add('hide'),1800); }
+
+  window.addEventListener('resize', ()=>{ layout(); });
+
+  // ---------- boot (hot-update aware) ----------
+  function start(snap){
+    load(); applySettings(); renderScript();
+    if(snap && snap.mode==='prompt'){ el.stage.classList.remove('off'); el.editor.hidden=true; mode='prompt'; y=snap.y||0; render(); keepAwake(); }
+    window.claude?.hot?.snapshot?.(()=>({mode, y}));
+  }
+  window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+})();
+</script>
+
+</body>
+</html>
